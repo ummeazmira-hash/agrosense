@@ -43,26 +43,46 @@ export async function POST(request: Request) {
 
 export async function GET() {
   try {
-    const { data, error } = await supabase
+    const { data: reading, error: readingError } = await supabase
       .from("readings")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(1);
+      .limit(1)
+      .maybeSingle();
 
-    if (error) {
-      console.error("Supabase fetch error:", error);
+    if (readingError) {
+      console.error("Supabase reading fetch error:", readingError);
 
       return NextResponse.json(
-        { error: error.message },
+        { error: readingError.message },
         { status: 500 }
       );
     }
 
-    if (!data || data.length === 0) {
+    const { data: command, error: commandError } = await supabase
+      .from("commands")
+      .select("*")
+      .eq("node_id", "1")
+      .maybeSingle();
+
+    if (commandError) {
+      console.error("Supabase command fetch error:", commandError);
+
+      return NextResponse.json(
+        { error: commandError.message },
+        { status: 500 }
+      );
+    }
+
+    if (!reading) {
       return NextResponse.json(null);
     }
 
-    return NextResponse.json(data[0]);
+    return NextResponse.json({
+      ...reading,
+      mode: command?.mode ?? reading.mode,
+      pump: command?.pump ?? reading.pump,
+    });
   } catch (error) {
     console.error("API error:", error);
 
@@ -72,21 +92,27 @@ export async function GET() {
     );
   }
 }
+
 export async function PUT(request: Request) {
   try {
     const data = await request.json();
 
-const { error } = await supabase
-  .from("commands")
-  .upsert({
-    node_id: String(data.node_id),
-    mode: data.mode,
-    pump: data.pump,
-    updated_at: new Date().toISOString(),
-  });
+    const { error } = await supabase
+      .from("commands")
+      .upsert(
+        {
+          node_id: String(data.node_id),
+          mode: data.mode,
+          pump: data.pump,
+          updated_at: new Date().toISOString(),
+        },
+        {
+          onConflict: "node_id",
+        }
+      );
 
     if (error) {
-      console.error("Command insert error:", error);
+      console.error("Command update error:", error);
 
       return NextResponse.json(
         { error: error.message },
@@ -96,7 +122,9 @@ const { error } = await supabase
 
     return NextResponse.json({
       success: true,
-      message: "Command saved to Supabase",
+      message: "Command saved successfully",
+      mode: data.mode,
+      pump: data.pump,
     });
   } catch (error) {
     console.error("Command API error:", error);

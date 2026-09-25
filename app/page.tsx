@@ -32,8 +32,10 @@ export default function Home() {
     });
 
     if (!response.ok) {
-      throw new Error("Failed to send command");
-    }
+  const errorData = await response.json();
+  console.error("Command API error:", errorData);
+  throw new Error(errorData.error || "Failed to send command");
+}
 
     setMode(newMode);
     setPump(newPump);
@@ -52,8 +54,7 @@ export default function Home() {
 
           if (result) {
   setData(result);
-  setMode(result.mode);
-  setPump(result.pump);
+  
 }
         }
       } catch (error) {
