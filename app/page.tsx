@@ -12,13 +12,15 @@ import {
   Tooltip,
 } from "recharts";
 
+type Mode = "AUTO" | "MANUAL";
+
 type Telemetry = {
   node_id: number;
   moisture: number;
   temperature: number;
   rain: boolean;
   pump: boolean;
-  mode: "AUTO" | "MANUAL";
+  mode: Mode;
   rssi: number;
   snr: number;
 };
@@ -33,8 +35,14 @@ export default function Home() {
   const [data, setData] = useState<Telemetry | null>(null);
   const [history, setHistory] = useState<HistoryReading[]>([]);
   const [pump, setPump] = useState(false);
+  const [mode, setMode] = useState<Mode>("MANUAL");
+  const [sending, setSending] = useState(false);
 
-  const sendCommand = async (newPump: boolean) => {
+  const sendCommand = async (newMode: Mode, newPump: boolean) => {
+    if (sending) return;
+
+    setSending(true);
+
     try {
       const response = await fetch("/api/telemetry", {
         method: "PUT",
@@ -43,24 +51,26 @@ export default function Home() {
         },
         body: JSON.stringify({
           node_id: 1,
-          mode: "MANUAL",
+          mode: newMode,
           pump: newPump,
         }),
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error("Command API error:", response.status, errorText);
-        throw new Error(errorText || "Failed to send command");
+        throw new Error(await response.text());
       }
 
+      setMode(newMode);
       setPump(newPump);
     } catch (error) {
       console.error("Command error:", error);
+      alert("Could not send command. Please try again.");
+    } finally {
+      setSending(false);
     }
   };
 
-  // Fetch latest sensor readings
+  // Fetch latest sensor readings and control status
   useEffect(() => {
     const fetchData = async () => {
       try {
@@ -71,7 +81,12 @@ export default function Home() {
 
           if (result) {
             setData(result);
-            setPump(result.pump);
+
+            if (result.mode === "AUTO" || result.mode === "MANUAL") {
+              setMode(result.mode);
+            }
+
+            setPump(Boolean(result.pump));
           }
         }
       } catch (error) {
@@ -166,27 +181,83 @@ export default function Home() {
         </div>
       </div>
 
+      {/* Mode Selection */}
+      <div className="mt-8 rounded-xl bg-white p-6 shadow">
+        <h2 className="text-xl font-semibold text-gray-800">
+          Irrigation Mode
+        </h2>
+
+        <p className="mt-2 text-gray-500">
+          Select how you want to control the water pump.
+        </p>
+
+        <div className="mt-4 flex flex-wrap gap-4">
+          <button
+            onClick={() => sendCommand("AUTO", false)}
+            disabled={sending || mode === "AUTO"}
+            className={`rounded-lg px-6 py-3 font-semibold text-white ${
+              mode === "AUTO"
+                ? "bg-green-800"
+                : "bg-green-600 hover:bg-green-700"
+            } disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            AUTO
+          </button>
+
+          <button
+            onClick={() => sendCommand("MANUAL", false)}
+            disabled={sending || mode === "MANUAL"}
+            className={`rounded-lg px-6 py-3 font-semibold text-white ${
+              mode === "MANUAL"
+                ? "bg-blue-800"
+                : "bg-blue-600 hover:bg-blue-700"
+            } disabled:cursor-not-allowed disabled:opacity-60`}
+          >
+            MANUAL
+          </button>
+        </div>
+
+        <p className="mt-4 font-medium text-gray-700">
+          Current Mode: {mode}
+        </p>
+      </div>
+
       {/* Pump Control */}
       <div className="mt-8 rounded-xl bg-white p-6 shadow">
         <h2 className="text-xl font-semibold text-gray-800">
           Pump Control
         </h2>
 
-        <div className="mt-4 flex flex-wrap gap-4">
-          <button
-            onClick={() => sendCommand(true)}
-            className="rounded-lg bg-green-600 px-6 py-3 font-semibold text-white"
-          >
-            PUMP ON
-          </button>
+        {mode === "MANUAL" ? (
+          <>
+            <p className="mt-2 text-gray-500">
+              Manually control the water pump.
+            </p>
 
-          <button
-            onClick={() => sendCommand(false)}
-            className="rounded-lg bg-red-600 px-6 py-3 font-semibold text-white"
-          >
-            PUMP OFF
-          </button>
-        </div>
+            <div className="mt-4 flex flex-wrap gap-4">
+              <button
+                onClick={() => sendCommand("MANUAL", true)}
+                disabled={sending || pump}
+                className="rounded-lg bg-green-600 px-6 py-3 font-semibold text-white hover:bg-green-700 disabled:opacity-50"
+              >
+                PUMP ON
+              </button>
+
+              <button
+                onClick={() => sendCommand("MANUAL", false)}
+                disabled={sending || !pump}
+                className="rounded-lg bg-red-600 px-6 py-3 font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                PUMP OFF
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="mt-4 rounded-lg bg-green-50 p-4 text-green-800">
+            Automatic irrigation is active. The pump is controlled
+            according to soil moisture levels.
+          </p>
+        )}
       </div>
 
       {/* Soil Moisture History Graph */}
